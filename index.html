@@ -1,0 +1,828 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2023-08-29 Tue 21:18 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Convert =YAML= to JACoW Template</title>
+<meta name="author" content="Joshua Peters, Zhichu Chen (Ross)" />
+<meta name="generator" content="Org Mode" />
+<link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">Convert <code>YAML</code> to JACoW Template</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#orgb5ea4a9">1. Introduction</a></li>
+<li><a href="#org360369b">2. Configuration</a>
+<ul>
+<li><a href="#org403caf3">2.1. Datatype definitions</a>
+<ul>
+<li><a href="#org02f5d9b">2.1.1. Main file</a></li>
+<li><a href="#orgcf3f3d1">2.1.2. Pragma</a></li>
+<li><a href="#org13b6859">2.1.3. AuthorTitle</a></li>
+</ul>
+</li>
+<li><a href="#org2840d93">2.2. YAML generation</a></li>
+</ul>
+</li>
+<li><a href="#orgf138fb4">3. Application</a></li>
+<li><a href="#orgfcd2727">4. Summary</a></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-orgb5ea4a9" class="outline-2">
+<h2 id="orgb5ea4a9"><span class="section-number-2">1.</span> Introduction</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+“Author Title Check” is a tedious job during JACoW proceedings preparations. This tool intends to provide a tool to automatically generate the template for the authors when they submit their abstracts.
+</p>
+
+<p>
+Ideally, the web server can collect the information of the title, the author list, and the corresponding affiliation list of each author. Let’s assume it can export the configuration to a <code>YAML</code> file, what we need now is to parse it and export a template that can be directly used by the authors.
+</p>
+
+<p>
+There’re three things need to be clarify:
+</p>
+<ul class="org-ul">
+<li>It doesn’t have to be <code>YAML</code>. Any format will do as long as it can be parsed. <code>JSON</code> is fine. <code>XML</code> needs additional efforts for the code because another library will be used.</li>
+<li>There are two variants of the author-affiliation list described in the <a href="https://github.com/JACoW-org/JACoW_Templates">template</a>. Ross thought one of them is ambiguous so there will be no option to choose it in this version.</li>
+<li>Right now, this will only focus on LaTeX.</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org360369b" class="outline-2">
+<h2 id="org360369b"><span class="section-number-2">2.</span> Configuration</h2>
+<div class="outline-text-2" id="text-2">
+<p>
+The <code>YAML</code> file is supposed to have the following form:
+</p>
+<div class="org-src-container">
+<pre class="src src-yaml"><span style="color: #005e8b;">title</span>:
+  <span style="color: #005e8b;">caption</span>: This is the CAPTION
+  <span style="color: #005e8b;">funds</span>:
+    - Funded by A
+    - Funded by B
+<span style="color: #005e8b;">authors</span>:
+- <span style="color: #005e8b;">name</span>:
+    <span style="color: #005e8b;">firstName</span>: John
+    <span style="color: #005e8b;">lastName</span>:  Doe
+    <span style="color: #005e8b;">otherFields</span>: will be ignored
+  <span style="color: #005e8b;">type</span>: primary
+  <span style="color: #005e8b;">email</span>: john.doe@first.author
+  <span style="color: #005e8b;">address</span>:
+  - <span style="color: #005e8b;">name</span>: Inst. A
+    <span style="color: #005e8b;">address</span>: Addr. A
+    <span style="color: #005e8b;">zip</span>: <span style="color: #3548cf;">'123456'</span>
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org403caf3" class="outline-3">
+<h3 id="org403caf3"><span class="section-number-3">2.1.</span> Datatype definitions</h3>
+<div class="outline-text-3" id="text-2-1">
+</div>
+
+<div id="outline-container-org02f5d9b" class="outline-4">
+<h4 id="org02f5d9b"><span class="section-number-4">2.1.1.</span> Main file</h4>
+<div class="outline-text-4" id="text-2-1-1">
+<p>
+This library will be imported by my program.
+</p>
+
+<p>
+Use pragmas
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #005e8b;">&lt;&lt;</span><span style="color: #531ab6; font-weight: bold;">type</span><span style="color: #005e8b;">-</span>pragma<span style="color: #005e8b;">&gt;&gt;</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">module</span> <span style="color: #005f5f; font-weight: bold;">JACoW.Types</span> <span style="color: #531ab6; font-weight: bold;">where</span>
+</pre>
+</div>
+
+<p>
+Import libraries
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #005e8b;">&lt;&lt;</span><span style="color: #531ab6; font-weight: bold;">type</span><span style="color: #005e8b;">-</span>imports<span style="color: #005e8b;">&gt;&gt;</span>
+</pre>
+</div>
+
+<p>
+The <code>Data.Text</code> library is needed as this will be the main data type for the LaTeX strings:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">import</span> <span style="color: #005f5f; font-weight: bold;">Data.Text</span> <span style="color: #531ab6; font-weight: bold;">hiding</span>
+       <span style="color: #000000;">(</span>
+         <span style="color: #005e8b;">&lt;&lt;</span><span style="color: #531ab6; font-weight: bold;">type</span><span style="color: #005e8b;">-</span><span style="color: #531ab6; font-weight: bold;">data</span><span style="color: #005e8b;">-</span>text<span style="color: #005e8b;">-</span>hide<span style="color: #005e8b;">&gt;&gt;</span>
+       <span style="color: #000000;">)</span>
+</pre>
+</div>
+
+<p>
+The <code>Data.List</code> library is also needed to manipulate list objects:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">import</span> <span style="color: #005f5f; font-weight: bold;">Data.List</span> <span style="color: #531ab6; font-weight: bold;">hiding</span>
+       <span style="color: #000000;">(</span>
+         <span style="color: #005e8b;">&lt;&lt;</span><span style="color: #531ab6; font-weight: bold;">type</span><span style="color: #005e8b;">-</span><span style="color: #531ab6; font-weight: bold;">data</span><span style="color: #005e8b;">-</span>list<span style="color: #005e8b;">-</span>hide<span style="color: #005e8b;">&gt;&gt;</span>
+       <span style="color: #000000;">)</span>
+</pre>
+</div>
+
+
+<p>
+The <code>Prelude</code> library will be imported at the end to ensure everything is already in scope and we will have no warnings:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">import</span> <span style="color: #005f5f; font-weight: bold;">Prelude</span> <span style="color: #531ab6; font-weight: bold;">hiding</span>
+       <span style="color: #000000;">(</span>
+         <span style="color: #005e8b;">&lt;&lt;</span><span style="color: #531ab6; font-weight: bold;">type</span><span style="color: #005e8b;">-</span>prelude<span style="color: #005e8b;">-</span>hide<span style="color: #005e8b;">&gt;&gt;</span>
+       <span style="color: #000000;">)</span>
+</pre>
+</div>
+
+<p>
+Create typeclasses
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #005e8b;">&lt;&lt;</span><span style="color: #531ab6; font-weight: bold;">type</span><span style="color: #005e8b;">-</span><span style="color: #531ab6; font-weight: bold;">class</span><span style="color: #005e8b;">&gt;&gt;</span>
+</pre>
+</div>
+
+<p>
+Define handy functions
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #005e8b;">&lt;&lt;</span><span style="color: #531ab6; font-weight: bold;">type</span><span style="color: #005e8b;">-</span>function<span style="color: #005e8b;">&gt;&gt;</span>
+</pre>
+</div>
+
+<p>
+And our data type and corresponding typeclasses
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #005e8b;">&lt;&lt;</span><span style="color: #531ab6; font-weight: bold;">type</span><span style="color: #005e8b;">-</span>defs<span style="color: #005e8b;">&gt;&gt;</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgcf3f3d1" class="outline-4">
+<h4 id="orgcf3f3d1"><span class="section-number-4">2.1.2.</span> Pragma</h4>
+<div class="outline-text-4" id="text-2-1-2">
+<p>
+Automatically convert <code>String</code> inside double quotation marks to <code>Text</code>
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #a0132f;">{-# LANGUAGE OverloadedStrings #-}</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org13b6859" class="outline-4">
+<h4 id="org13b6859"><span class="section-number-4">2.1.3.</span> AuthorTitle</h4>
+<div class="outline-text-4" id="text-2-1-3">
+<p>
+Define a class that allows data be converted to LaTeX strings:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">class</span> <span style="color: #005f5f; font-weight: bold;">LaTeXable</span> a <span style="color: #531ab6; font-weight: bold;">where</span>
+    totitle <span style="color: #005e8b;">::</span> a <span style="color: #005e8b;">-&gt;</span> <span style="color: #000000;">[</span><span style="color: #005f5f; font-weight: bold;">Affiliation</span><span style="color: #000000;">]</span> <span style="color: #005e8b;">-&gt;</span> <span style="color: #005f5f; font-weight: bold;">Text</span>
+</pre>
+</div>
+<p>
+This <code>totitle</code> function takes the data and the affiliation list, then returns the LaTeX string.
+</p>
+
+<p>
+Define a <code>simpletitle</code> command to convert the data when the affiliation list is not needed:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #721045;">simpletitle</span> <span style="color: #005e8b;">::</span> <span style="color: #000000;">(</span><span style="color: #005f5f; font-weight: bold;">LaTeXable</span> a<span style="color: #000000;">)</span> <span style="color: #005e8b;">=&gt;</span> a <span style="color: #005e8b;">-&gt;</span> <span style="color: #005f5f; font-weight: bold;">Text</span>
+<span style="color: #721045;">simpletitle</span> <span style="color: #005e8b;">=</span> flip totitle <span style="color: #000000; font-weight: bold;">[]</span>
+</pre>
+</div>
+<p>
+It’s just not necessary to define it in the <code>LaTeXable</code> class.
+</p>
+
+<p>
+The <code>YAML</code> configuration consists of two entries: a title, and an author list:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">data</span> <span style="color: #005f5f; font-weight: bold;">AuthorTitle</span> <span style="color: #005e8b;">=</span> <span style="color: #005f5f; font-weight: bold;">AuthorTitle</span>
+                   <span style="color: #000000;">{</span> title   <span style="color: #005e8b;">::</span> <span style="color: #005f5f; font-weight: bold;">Title</span>
+                   , authors <span style="color: #005e8b;">::</span> <span style="color: #dd22dd;">[</span><span style="color: #005f5f; font-weight: bold;">Author</span><span style="color: #dd22dd;">]</span>
+                   <span style="color: #000000;">}</span> <span style="color: #531ab6; font-weight: bold;">deriving</span> <span style="color: #000000;">(</span><span style="color: #005f5f; font-weight: bold;">Show</span><span style="color: #000000;">)</span>
+</pre>
+</div>
+
+<p>
+We need to read the <code>title</code> entry to the <code>title</code> field (first one) and the <code>authors</code> entry to the <code>authors</code> field (second one):
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">instance</span> <span style="color: #005f5f; font-weight: bold;">FromJSON</span> <span style="color: #005f5f; font-weight: bold;">AuthorTitle</span> <span style="color: #531ab6; font-weight: bold;">where</span>
+  parseJSON <span style="color: #000000;">(</span><span style="color: #005f5f; font-weight: bold;">Object</span> v<span style="color: #000000;">)</span> <span style="color: #005e8b;">=</span>
+    <span style="color: #005f5f; font-weight: bold;">AuthorTitle</span>    <span style="color: #005e8b;">&lt;$&gt;</span>
+    v <span style="color: #005e8b;">.:</span>   <span style="color: #3548cf;">"title"</span> <span style="color: #005e8b;">&lt;*&gt;</span>
+    v <span style="color: #005e8b;">.:</span>   <span style="color: #3548cf;">"authors"</span>
+  parseJSON <span style="color: #531ab6; font-weight: bold;">_</span> <span style="color: #005e8b;">=</span> fail <span style="color: #3548cf;">"Expected Object for Config value"</span>
+</pre>
+</div>
+<p>
+<code>FromJSON</code> and other stuffs need to be imported from <code>Data.Yaml</code>:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">import</span> <span style="color: #005f5f; font-weight: bold;">Data.Yaml</span>
+</pre>
+</div>
+<p>
+and these fancy operators <code>&lt;$&gt;</code>, <code>&lt;*&gt;</code> from <code>Control.Applicative</code>:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">import</span> <span style="color: #005f5f; font-weight: bold;">Control.Applicative</span>
+</pre>
+</div>
+
+<p>
+Converting <code>AuthorTitle</code> to LaTeX is easy: converting both <code>title</code> and <code>authors</code>, then stick them together with a newline character:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">instance</span> <span style="color: #005f5f; font-weight: bold;">LaTeXable</span> <span style="color: #005f5f; font-weight: bold;">AuthorTitle</span> <span style="color: #531ab6; font-weight: bold;">where</span>
+  totitle <span style="color: #000000;">(</span><span style="color: #005f5f; font-weight: bold;">AuthorTitle</span> t as<span style="color: #000000;">)</span> <span style="color: #531ab6; font-weight: bold;">_</span>  <span style="color: #005e8b;">=</span> unlines <span style="color: #000000;">[</span>totitle t affs, authorTeX <span style="color: #dd22dd;">(</span>unTeXlines <span style="color: #008899;">(</span><span style="color: #972500;">[</span>unlines auths<span style="color: #972500;">]</span> <span style="color: #005e8b;">&lt;&gt;</span> fmap toAff <span style="color: #972500;">(</span>zip <span style="color: #808000;">[</span><span style="color: #0000b0;">1</span><span style="color: #005e8b;">..</span><span style="color: #808000;">]</span> affs<span style="color: #972500;">)</span><span style="color: #008899;">)</span><span style="color: #dd22dd;">)</span><span style="color: #000000;">]</span>
+    <span style="color: #531ab6; font-weight: bold;">where</span>
+      affs <span style="color: #005e8b;">=</span> fromMaybe <span style="color: #000000; font-weight: bold;">[]</span> <span style="color: #000000;">(</span>nub <span style="color: #005e8b;">&lt;$&gt;</span> <span style="color: #dd22dd;">(</span>foldl1 <span style="color: #008899;">(</span><span style="color: #005e8b;">&lt;&gt;</span><span style="color: #008899;">)</span> <span style="color: #005e8b;">$</span> fmap addresses as<span style="color: #dd22dd;">)</span><span style="color: #000000;">)</span>
+      auths <span style="color: #005e8b;">=</span> fmap <span style="color: #000000;">(</span>flip totitle affs<span style="color: #000000;">)</span> as
+      toAff <span style="color: #000000;">(</span>n,aff<span style="color: #000000;">)</span> <span style="color: #005e8b;">=</span> supTeX <span style="color: #000000;">(</span><span style="color: #dd22dd;">(</span>pack<span style="color: #005e8b;">.</span>show<span style="color: #dd22dd;">)</span> n<span style="color: #000000;">)</span> <span style="color: #005e8b;">&lt;&gt;</span> totitle aff affs
+</pre>
+</div>
+<p>
+<code>authorTeX</code> is used to generate <code>\author{...}</code>.
+</p>
+
+<p>
+Since I will be using LaTeX macros a lot, Let me define a one-argument LaTeX macro:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #721045;">cs1</span> <span style="color: #005e8b;">::</span> <span style="color: #005f5f; font-weight: bold;">Text</span> <span style="color: #005e8b;">-&gt;</span> <span style="color: #005f5f; font-weight: bold;">Text</span> <span style="color: #005e8b;">-&gt;</span> <span style="color: #005f5f; font-weight: bold;">Text</span>
+<span style="color: #721045;">cs1</span> cs arg1 <span style="color: #005e8b;">=</span> <span style="color: #3548cf;">"\\"</span> <span style="color: #005e8b;">&lt;&gt;</span> cs <span style="color: #005e8b;">&lt;&gt;</span> <span style="color: #3548cf;">"{"</span> <span style="color: #005e8b;">&lt;&gt;</span> arg1 <span style="color: #005e8b;">&lt;&gt;</span> <span style="color: #3548cf;">"}"</span>
+</pre>
+</div>
+<p>
+Now I can define <code>authorTeX</code>:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #721045;">authorTeX</span>  <span style="color: #005e8b;">=</span> cs1 <span style="color: #3548cf;">"author"</span>
+</pre>
+</div>
+
+<p>
+<code>fromMaybe</code> needs to be imported from <code>Data.Maybe</code> library:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">import</span> <span style="color: #005f5f; font-weight: bold;">Data.Maybe</span>
+</pre>
+</div>
+
+<p>
+<code>zip</code> and <code>foldl1</code> should not be imported from <code>Data.Text</code> so:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell">zip,foldl1,
+</pre>
+</div>
+
+<p>
+<code>unlines</code> should not be imported from <code>Prelude</code>:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell">unlines,
+</pre>
+</div>
+<p>
+or <code>Data.List</code>:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell">unlines,
+</pre>
+</div>
+
+<p>
+<code>unTeXlines</code> puts <code>\\</code> at the end of each line:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #721045;">unTeXlines</span> <span style="color: #005e8b;">=</span> intercalate <span style="color: #000000;">(</span><span style="color: #3548cf;">"\\\\"</span> <span style="color: #005e8b;">&lt;&gt;</span> singleton <span style="color: #3548cf;">'\n'</span><span style="color: #000000;">)</span>
+</pre>
+</div>
+<p>
+and <code>intercalate</code> and <code>singleton</code> should not be imported from <code>Data.List</code>:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell">intercalate,singleton,
+</pre>
+</div>
+</div>
+
+<ol class="org-ol">
+<li><a id="org4a1be9c"></a>Title<br />
+<div class="outline-text-5" id="text-2-1-3-1">
+<p>
+The <code>Title</code> data type consists of a caption and probably a list of funds:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">data</span> <span style="color: #005f5f; font-weight: bold;">Title</span> <span style="color: #005e8b;">=</span> <span style="color: #005f5f; font-weight: bold;">Title</span>
+             <span style="color: #000000;">{</span> caption <span style="color: #005e8b;">::</span> <span style="color: #005f5f; font-weight: bold;">Text</span>
+             , funds   <span style="color: #005e8b;">::</span> <span style="color: #005f5f; font-weight: bold;">Maybe</span> <span style="color: #dd22dd;">[</span><span style="color: #005f5f; font-weight: bold;">Fund</span><span style="color: #dd22dd;">]</span>
+             <span style="color: #000000;">}</span> <span style="color: #531ab6; font-weight: bold;">deriving</span> <span style="color: #000000;">(</span><span style="color: #005f5f; font-weight: bold;">Show</span><span style="color: #000000;">)</span>
+</pre>
+</div>
+<p>
+where <code>Fund</code> is an alias of <code>Text</code> for now:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">type</span> <span style="color: #005f5f; font-weight: bold;">Fund</span> <span style="color: #005e8b;">=</span> <span style="color: #005f5f; font-weight: bold;">Text</span>
+</pre>
+</div>
+
+<p>
+The <code>FromJSON</code> instance is straightforward:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">instance</span> <span style="color: #005f5f; font-weight: bold;">FromJSON</span> <span style="color: #005f5f; font-weight: bold;">Title</span> <span style="color: #531ab6; font-weight: bold;">where</span>
+  parseJSON <span style="color: #000000;">(</span><span style="color: #005f5f; font-weight: bold;">Object</span> v<span style="color: #000000;">)</span> <span style="color: #005e8b;">=</span>
+    <span style="color: #005f5f; font-weight: bold;">Title</span>            <span style="color: #005e8b;">&lt;$&gt;</span>
+    v <span style="color: #005e8b;">.:</span>   <span style="color: #3548cf;">"caption"</span> <span style="color: #005e8b;">&lt;*&gt;</span>
+    v <span style="color: #005e8b;">.:?</span>  <span style="color: #3548cf;">"funds"</span>
+  parseJSON <span style="color: #531ab6; font-weight: bold;">_</span> <span style="color: #005e8b;">=</span> fail <span style="color: #3548cf;">"Expected Object for Config value"</span>
+</pre>
+</div>
+<p>
+and converting <code>Title</code> to LaTeX is put the caption and the list of funds in the <code>\title</code> micro:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">instance</span> <span style="color: #005f5f; font-weight: bold;">LaTeXable</span> <span style="color: #005f5f; font-weight: bold;">Title</span> <span style="color: #531ab6; font-weight: bold;">where</span>
+  totitle <span style="color: #000000;">(</span><span style="color: #005f5f; font-weight: bold;">Title</span> cap fs<span style="color: #000000;">)</span> <span style="color: #531ab6; font-weight: bold;">_</span>  <span style="color: #005e8b;">=</span> titleTeX <span style="color: #005e8b;">$</span> cap <span style="color: #005e8b;">&lt;&gt;</span> sep <span style="color: #000000;">(</span>fromMaybe <span style="color: #dd22dd; font-weight: bold;">[]</span> <span style="color: #005e8b;">$</span> fmap <span style="color: #dd22dd;">(</span>fmap thanksTeX<span style="color: #dd22dd;">)</span> fs<span style="color: #000000;">)</span>
+</pre>
+</div>
+<p>
+where <code>titleTeX</code> is used to generate <code>\title{...}</code>:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #721045;">titleTeX</span>  <span style="color: #005e8b;">=</span> cs1 <span style="color: #3548cf;">"title"</span>
+</pre>
+</div>
+<p>
+and likewise <code>thanksTeX</code>:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #721045;">thanksTeX</span> <span style="color: #005e8b;">=</span> cs1 <span style="color: #3548cf;">"thanks"</span>
+</pre>
+</div>
+
+<p>
+<code>sep</code> concatenates the list of <code>Text</code> strings and intercalates <code>\textsuperscript{,}</code> in-between:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #721045;">supTeX</span>    <span style="color: #005e8b;">=</span> cs1 <span style="color: #3548cf;">"textsuperscript"</span>
+<span style="color: #721045;">supComma</span>  <span style="color: #005e8b;">=</span> supTeX <span style="color: #3548cf;">","</span>
+<span style="color: #721045;">sep</span>       <span style="color: #005e8b;">=</span> intercalate supComma
+</pre>
+</div>
+</div>
+</li>
+
+
+<li><a id="orgb5a9757"></a>Author<br />
+<div class="outline-text-5" id="text-2-1-3-2">
+<p>
+<code>Author</code> has the following fields: a name, an email, probably a list of affiliations and whether the author is a primary author.
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">data</span> <span style="color: #005f5f; font-weight: bold;">Author</span> <span style="color: #005e8b;">=</span> <span style="color: #005f5f; font-weight: bold;">Author</span>
+              <span style="color: #000000;">{</span> name       <span style="color: #005e8b;">::</span> <span style="color: #005f5f; font-weight: bold;">Name</span>
+              , email      <span style="color: #005e8b;">::</span> <span style="color: #005f5f; font-weight: bold;">Email</span>
+              , addresses  <span style="color: #005e8b;">::</span> <span style="color: #005f5f; font-weight: bold;">Maybe</span> <span style="color: #dd22dd;">[</span><span style="color: #005f5f; font-weight: bold;">Affiliation</span><span style="color: #dd22dd;">]</span>
+              , isPrimary  <span style="color: #005e8b;">::</span> <span style="color: #005f5f; font-weight: bold;">Bool</span>
+              <span style="color: #000000;">}</span> <span style="color: #531ab6; font-weight: bold;">deriving</span> <span style="color: #000000;">(</span><span style="color: #005f5f; font-weight: bold;">Show</span><span style="color: #000000;">)</span>
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">instance</span> <span style="color: #005f5f; font-weight: bold;">FromJSON</span> <span style="color: #005f5f; font-weight: bold;">Author</span> <span style="color: #531ab6; font-weight: bold;">where</span>
+  parseJSON <span style="color: #000000;">(</span><span style="color: #005f5f; font-weight: bold;">Object</span> v<span style="color: #000000;">)</span> <span style="color: #005e8b;">=</span>
+    <span style="color: #005f5f; font-weight: bold;">Author</span>             <span style="color: #005e8b;">&lt;$&gt;</span>
+    v <span style="color: #005e8b;">.:</span>   <span style="color: #3548cf;">"name"</span>      <span style="color: #005e8b;">&lt;*&gt;</span>
+    v <span style="color: #005e8b;">.:</span>   <span style="color: #3548cf;">"email"</span>     <span style="color: #005e8b;">&lt;*&gt;</span>
+    v <span style="color: #005e8b;">.:?</span>  <span style="color: #3548cf;">"addresses"</span> <span style="color: #005e8b;">&lt;*&gt;</span>
+    <span style="color: #000000;">(</span>maybePrimary <span style="color: #005e8b;">&lt;$&gt;</span> <span style="color: #dd22dd;">(</span>v <span style="color: #005e8b;">.:?</span> <span style="color: #3548cf;">"type"</span> <span style="color: #005e8b;">.!=</span> <span style="color: #005f5f; font-weight: bold;">Just</span> <span style="color: #3548cf;">"other"</span> <span style="color: #005e8b;">::</span> <span style="color: #005f5f; font-weight: bold;">Parser</span> <span style="color: #008899;">(</span><span style="color: #005f5f; font-weight: bold;">Maybe</span> <span style="color: #005f5f; font-weight: bold;">Text</span><span style="color: #008899;">)</span><span style="color: #dd22dd;">)</span><span style="color: #000000;">)</span>
+  parseJSON <span style="color: #531ab6; font-weight: bold;">_</span> <span style="color: #005e8b;">=</span> fail <span style="color: #3548cf;">"Expected Object for Config value"</span>
+</pre>
+</div>
+
+<p>
+The <code>maybePrimary</code> function will check whether the <code>type</code> field in the <code>YAML</code> configuration is <code>primary</code> (case insensitive):
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #721045;">maybePrimary</span> <span style="color: #005e8b;">::</span> <span style="color: #005f5f; font-weight: bold;">Maybe</span> <span style="color: #005f5f; font-weight: bold;">Text</span> <span style="color: #005e8b;">-&gt;</span> <span style="color: #005f5f; font-weight: bold;">Bool</span>
+<span style="color: #721045;">maybePrimary</span> <span style="color: #000000;">(</span><span style="color: #005f5f; font-weight: bold;">Just</span> str<span style="color: #000000;">)</span> <span style="color: #005e8b;">=</span> <span style="color: #000000;">(</span><span style="color: #005e8b;">==</span> <span style="color: #3548cf;">"primary"</span><span style="color: #000000;">)</span><span style="color: #005e8b;">.</span>toLower <span style="color: #005e8b;">$</span> str
+<span style="color: #721045;">maybePrimary</span> <span style="color: #531ab6; font-weight: bold;">_</span> <span style="color: #005e8b;">=</span> <span style="color: #005f5f; font-weight: bold;">False</span>
+</pre>
+</div>
+
+<p>
+Converting <code>Author</code> to LaTeX will really use the affiliation list this time.
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">instance</span> <span style="color: #005f5f; font-weight: bold;">LaTeXable</span> <span style="color: #005f5f; font-weight: bold;">Author</span> <span style="color: #531ab6; font-weight: bold;">where</span>
+  totitle <span style="color: #000000;">(</span><span style="color: #005f5f; font-weight: bold;">Author</span> nm em addrs isP<span style="color: #000000;">)</span> affs <span style="color: #005e8b;">=</span> totitle nm affs <span style="color: #005e8b;">&lt;&gt;</span> sep <span style="color: #000000;">(</span>thankslst <span style="color: #005e8b;">&lt;&gt;</span> catMaybes <span style="color: #dd22dd;">(</span>fmap <span style="color: #008899;">(</span>flip addrIndex affs<span style="color: #008899;">)</span> <span style="color: #008899;">(</span>fromMaybe <span style="color: #972500; font-weight: bold;">[]</span> addrs<span style="color: #008899;">)</span><span style="color: #dd22dd;">)</span><span style="color: #000000;">)</span>
+    <span style="color: #531ab6; font-weight: bold;">where</span> thankslst <span style="color: #005e8b;">=</span>
+            <span style="color: #531ab6; font-weight: bold;">if</span> isP
+            <span style="color: #531ab6; font-weight: bold;">then</span> <span style="color: #000000;">[</span>totitle em affs<span style="color: #000000;">]</span>
+            <span style="color: #531ab6; font-weight: bold;">else</span> <span style="color: #000000; font-weight: bold;">[]</span>
+</pre>
+</div>
+
+<p>
+<code>addrIndex</code> returns the index of the affiliation if found in the list:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #721045;">addrIndex</span> <span style="color: #005e8b;">::</span> <span style="color: #005f5f; font-weight: bold;">Affiliation</span> <span style="color: #005e8b;">-&gt;</span> <span style="color: #000000;">[</span><span style="color: #005f5f; font-weight: bold;">Affiliation</span><span style="color: #000000;">]</span> <span style="color: #005e8b;">-&gt;</span> <span style="color: #005f5f; font-weight: bold;">Maybe</span> <span style="color: #005f5f; font-weight: bold;">Text</span>
+<span style="color: #721045;">addrIndex</span> aff affs <span style="color: #005e8b;">=</span> <span style="color: #000000;">(</span>supTeX<span style="color: #005e8b;">.</span>pack<span style="color: #005e8b;">.</span>show<span style="color: #005e8b;">.</span><span style="color: #dd22dd;">(</span><span style="color: #005e8b;">+</span><span style="color: #0000b0;">1</span><span style="color: #dd22dd;">)</span><span style="color: #000000;">)</span> <span style="color: #005e8b;">&lt;$&gt;</span> aff <span style="color: #005e8b;">`elemIndex`</span> affs
+</pre>
+</div>
+
+<p>
+<code>Email</code> is an alias of <code>Text</code>:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">type</span> <span style="color: #005f5f; font-weight: bold;">Email</span> <span style="color: #005e8b;">=</span> <span style="color: #005f5f; font-weight: bold;">Text</span>
+</pre>
+</div>
+<p>
+and is easy to be converted to LaTeX:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">instance</span> <span style="color: #005f5f; font-weight: bold;">LaTeXable</span> <span style="color: #005f5f; font-weight: bold;">Email</span> <span style="color: #531ab6; font-weight: bold;">where</span>
+  totitle eml <span style="color: #531ab6; font-weight: bold;">_</span> <span style="color: #005e8b;">=</span> thanksTeX eml
+</pre>
+</div>
+
+<p>
+<code>Name</code> and <code>Affiliation</code> is more complicated.
+</p>
+</div>
+
+<ol class="org-ol">
+<li><a id="org04f09a6"></a>Name<br />
+<div class="outline-text-6" id="text-2-1-3-2-1">
+<p>
+<code>Name</code> has fields of <code>firstName</code>, <code>lastName</code> and probably <code>initials</code>:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">data</span> <span style="color: #005f5f; font-weight: bold;">Name</span> <span style="color: #005e8b;">=</span> <span style="color: #005f5f; font-weight: bold;">Name</span>
+            <span style="color: #000000;">{</span> firstName <span style="color: #005e8b;">::</span> <span style="color: #005f5f; font-weight: bold;">Text</span>
+            , lastName  <span style="color: #005e8b;">::</span> <span style="color: #005f5f; font-weight: bold;">Text</span>
+            , initials  <span style="color: #005e8b;">::</span> <span style="color: #005f5f; font-weight: bold;">Maybe</span> <span style="color: #005f5f; font-weight: bold;">Text</span>
+            <span style="color: #000000;">}</span> <span style="color: #531ab6; font-weight: bold;">deriving</span> <span style="color: #000000;">(</span><span style="color: #005f5f; font-weight: bold;">Show</span><span style="color: #000000;">)</span>
+</pre>
+</div>
+<p>
+and reads directly from:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">instance</span> <span style="color: #005f5f; font-weight: bold;">FromJSON</span> <span style="color: #005f5f; font-weight: bold;">Name</span> <span style="color: #531ab6; font-weight: bold;">where</span>
+  parseJSON <span style="color: #000000;">(</span><span style="color: #005f5f; font-weight: bold;">Object</span> v<span style="color: #000000;">)</span> <span style="color: #005e8b;">=</span>
+    <span style="color: #005f5f; font-weight: bold;">Name</span>               <span style="color: #005e8b;">&lt;$&gt;</span>
+    v <span style="color: #005e8b;">.:</span>   <span style="color: #3548cf;">"firstName"</span> <span style="color: #005e8b;">&lt;*&gt;</span>
+    v <span style="color: #005e8b;">.:</span>   <span style="color: #3548cf;">"lastName"</span>  <span style="color: #005e8b;">&lt;*&gt;</span>
+    v <span style="color: #005e8b;">.:?</span>  <span style="color: #3548cf;">"initials"</span>
+  parseJSON <span style="color: #531ab6; font-weight: bold;">_</span> <span style="color: #005e8b;">=</span> fail <span style="color: #3548cf;">"Expected Object for Config value"</span>
+</pre>
+</div>
+
+<p>
+<code>firstName lastName</code> would be the LaTeX representation:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">instance</span> <span style="color: #005f5f; font-weight: bold;">LaTeXable</span> <span style="color: #005f5f; font-weight: bold;">Name</span> <span style="color: #531ab6; font-weight: bold;">where</span>
+    totitle <span style="color: #000000;">(</span><span style="color: #005f5f; font-weight: bold;">Name</span> fnm lnm ini<span style="color: #000000;">)</span> <span style="color: #531ab6; font-weight: bold;">_</span> <span style="color: #005e8b;">=</span> unwords <span style="color: #000000;">[</span>fnm,lnm<span style="color: #000000;">]</span> <span style="color: #7f0000; font-style: italic;">-- </span><span style="color: #7f0000; font-style: italic;">firstname lastname</span>
+</pre>
+</div>
+
+<p>
+Of course, <code>unwords</code> should be imported from <code>Data.Text</code> rather than from <code>Prelude</code>:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell">unwords,
+</pre>
+</div>
+<p>
+nor from <code>Data.List</code>:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell">unwords,
+</pre>
+</div>
+</div>
+</li>
+
+<li><a id="org0c7e526"></a>Affiliation<br />
+<div class="outline-text-6" id="text-2-1-3-2-2">
+<p>
+<code>Affiliation</code> has it name and probably an address and a zip code:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">data</span> <span style="color: #005f5f; font-weight: bold;">Affiliation</span> <span style="color: #005e8b;">=</span> <span style="color: #005f5f; font-weight: bold;">Affiliation</span>
+                   <span style="color: #000000;">{</span> affName  <span style="color: #005e8b;">::</span> <span style="color: #005f5f; font-weight: bold;">Text</span>
+                   , adress   <span style="color: #005e8b;">::</span> <span style="color: #005f5f; font-weight: bold;">Maybe</span> <span style="color: #005f5f; font-weight: bold;">Text</span>
+                   , zipcode  <span style="color: #005e8b;">::</span> <span style="color: #005f5f; font-weight: bold;">Maybe</span> <span style="color: #005f5f; font-weight: bold;">Text</span>
+                   <span style="color: #000000;">}</span> <span style="color: #531ab6; font-weight: bold;">deriving</span> <span style="color: #000000;">(</span><span style="color: #005f5f; font-weight: bold;">Show</span>,<span style="color: #005f5f; font-weight: bold;">Eq</span><span style="color: #000000;">)</span>
+</pre>
+</div>
+<p>
+The reason I define <code>Affiliation</code> as an <code>Eq</code> class is because we need to locate the affiliation by comparing them.
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">instance</span> <span style="color: #005f5f; font-weight: bold;">FromJSON</span> <span style="color: #005f5f; font-weight: bold;">Affiliation</span> <span style="color: #531ab6; font-weight: bold;">where</span>
+  parseJSON <span style="color: #000000;">(</span><span style="color: #005f5f; font-weight: bold;">Object</span> v<span style="color: #000000;">)</span> <span style="color: #005e8b;">=</span>
+    <span style="color: #005f5f; font-weight: bold;">Affiliation</span>      <span style="color: #005e8b;">&lt;$&gt;</span>
+    v <span style="color: #005e8b;">.:</span>   <span style="color: #3548cf;">"name"</span>    <span style="color: #005e8b;">&lt;*&gt;</span>
+    v <span style="color: #005e8b;">.:?</span>  <span style="color: #3548cf;">"address"</span> <span style="color: #005e8b;">&lt;*&gt;</span>
+    v <span style="color: #005e8b;">.:?</span>  <span style="color: #3548cf;">"zip"</span>
+  parseJSON <span style="color: #531ab6; font-weight: bold;">_</span> <span style="color: #005e8b;">=</span> fail <span style="color: #3548cf;">"Expected Object for Config value"</span>
+</pre>
+</div>
+<p>
+Append the address and/or the zip code when they are available:
+</p>
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">instance</span> <span style="color: #005f5f; font-weight: bold;">LaTeXable</span> <span style="color: #005f5f; font-weight: bold;">Affiliation</span> <span style="color: #531ab6; font-weight: bold;">where</span>
+  totitle aff <span style="color: #531ab6; font-weight: bold;">_</span> <span style="color: #005e8b;">=</span> affName aff                                                    <span style="color: #7f0000; font-style: italic;">-- </span><span style="color: #7f0000; font-style: italic;">name</span>
+                  <span style="color: #005e8b;">&lt;&gt;</span> fromMaybe <span style="color: #3548cf;">""</span> <span style="color: #000000;">(</span><span style="color: #dd22dd;">(</span><span style="color: #008899;">(</span><span style="color: #005e8b;">&lt;&gt;</span><span style="color: #008899;">)</span> <span style="color: #3548cf;">", "</span><span style="color: #dd22dd;">)</span> <span style="color: #005e8b;">&lt;$&gt;</span> adress aff<span style="color: #000000;">)</span>                   <span style="color: #7f0000; font-style: italic;">-- </span><span style="color: #7f0000; font-style: italic;">, address</span>
+                  <span style="color: #005e8b;">&lt;&gt;</span> fromMaybe <span style="color: #3548cf;">""</span> <span style="color: #000000;">(</span><span style="color: #dd22dd;">(</span><span style="color: #008899;">(</span><span style="color: #005e8b;">&lt;&gt;</span><span style="color: #008899;">)</span> <span style="color: #3548cf;">", "</span><span style="color: #dd22dd;">)</span> <span style="color: #005e8b;">&lt;$&gt;</span> zipcode aff<span style="color: #000000;">)</span>                  <span style="color: #7f0000; font-style: italic;">-- </span><span style="color: #7f0000; font-style: italic;">, zip</span>
+</pre>
+</div>
+</div>
+</li>
+</ol>
+</li>
+</ol>
+</div>
+</div>
+
+<div id="outline-container-org2840d93" class="outline-3">
+<h3 id="org2840d93"><span class="section-number-3">2.2.</span> YAML generation</h3>
+<div class="outline-text-3" id="text-2-2">
+<p>
+In case I could make mistakes in the data type codes in <code>Haskell</code>, I will use <code>Python</code> to generate the configuration file to make it independent.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="color: #531ab6; font-weight: bold;">import</span> yaml
+
+<span style="color: #531ab6; font-weight: bold;">class</span> <span style="color: #005f5f; font-weight: bold;">JACoW</span>:
+    <span style="color: #531ab6; font-weight: bold;">pass</span>
+
+<span style="color: #005e8b;">mypaper</span> = <span style="color: #000000;">{}</span>
+<span style="color: #005e8b;">mypaper</span><span style="color: #000000;">[</span><span style="color: #3548cf;">'title'</span><span style="color: #000000;">]</span> = <span style="color: #000000;">{</span>
+    <span style="color: #3548cf;">'caption'</span>: <span style="color: #3548cf;">'This is a title'</span>,
+    <span style="color: #3548cf;">'funds'</span>: <span style="color: #dd22dd;">[</span><span style="color: #3548cf;">'Fund A'</span>, <span style="color: #3548cf;">'Fund B'</span><span style="color: #dd22dd;">]</span>
+<span style="color: #000000;">}</span>
+
+<span style="color: #005e8b;">inst1</span> = <span style="color: #000000;">{</span>
+    <span style="color: #3548cf;">'name'</span>: <span style="color: #3548cf;">'Inst. A'</span>,
+    <span style="color: #3548cf;">'address'</span>: <span style="color: #3548cf;">'Somewhere'</span>,
+    <span style="color: #3548cf;">'zip'</span>: <span style="color: #3548cf;">'121212'</span>
+<span style="color: #000000;">}</span>
+
+<span style="color: #005e8b;">inst2</span> = <span style="color: #000000;">{</span>
+    <span style="color: #3548cf;">'name'</span>: <span style="color: #3548cf;">'Inst. B'</span>,
+    <span style="color: #3548cf;">'address'</span>: <span style="color: #3548cf;">'Somewhere'</span>,
+    <span style="color: #3548cf;">'zip'</span>: <span style="color: #3548cf;">'131313'</span>
+<span style="color: #000000;">}</span>
+
+<span style="color: #005e8b;">inst3</span> = <span style="color: #000000;">{</span>
+    <span style="color: #3548cf;">'name'</span>: <span style="color: #3548cf;">'Inst. C'</span>,
+    <span style="color: #3548cf;">'address'</span>: <span style="color: #3548cf;">'Somewhere'</span>,
+    <span style="color: #3548cf;">'zip'</span>: <span style="color: #3548cf;">'141414'</span>
+<span style="color: #000000;">}</span>
+
+<span style="color: #005e8b;">author1</span> = <span style="color: #000000;">{</span>
+    <span style="color: #3548cf;">'name'</span>: <span style="color: #dd22dd;">{</span>
+        <span style="color: #3548cf;">'firstName'</span>: <span style="color: #3548cf;">'John'</span>,
+        <span style="color: #3548cf;">'lastName'</span>: <span style="color: #3548cf;">'Doe'</span>,
+        <span style="color: #3548cf;">'initials'</span>: <span style="color: #3548cf;">'J.'</span>,
+        <span style="color: #3548cf;">'dateOfBirth'</span>: <span style="color: #3548cf;">'whocares'</span>
+           <span style="color: #dd22dd;">}</span>,
+    <span style="color: #3548cf;">'type'</span>: <span style="color: #3548cf;">'primary'</span>,
+    <span style="color: #3548cf;">'email'</span>: <span style="color: #3548cf;">'john.doe@first.author'</span>,
+    <span style="color: #3548cf;">'addresses'</span>: <span style="color: #dd22dd;">[</span> inst1, inst2, inst3 <span style="color: #dd22dd;">]</span>
+<span style="color: #000000;">}</span>
+
+<span style="color: #005e8b;">author2</span> = <span style="color: #000000;">{</span>
+    <span style="color: #3548cf;">'name'</span>: <span style="color: #dd22dd;">{</span>
+        <span style="color: #3548cf;">'firstName'</span>: <span style="color: #3548cf;">'Jane'</span>,
+        <span style="color: #3548cf;">'lastName'</span>: <span style="color: #3548cf;">'Doe'</span>,
+        <span style="color: #3548cf;">'initials'</span>: <span style="color: #3548cf;">'J.'</span>,
+        <span style="color: #3548cf;">'dateOfBirth'</span>: <span style="color: #3548cf;">'whocares'</span>
+           <span style="color: #dd22dd;">}</span>,
+    <span style="color: #3548cf;">'type'</span>: <span style="color: #3548cf;">'secondary'</span>,
+    <span style="color: #3548cf;">'email'</span>: <span style="color: #3548cf;">'jane.doe@second.author'</span>,
+    <span style="color: #3548cf;">'addresses'</span>: <span style="color: #dd22dd;">[</span> inst2, inst3 <span style="color: #dd22dd;">]</span>
+<span style="color: #000000;">}</span>
+
+<span style="color: #005e8b;">author3</span> = <span style="color: #000000;">{</span>
+    <span style="color: #3548cf;">'name'</span>: <span style="color: #dd22dd;">{</span>
+        <span style="color: #3548cf;">'firstName'</span>: <span style="color: #3548cf;">'Jack'</span>,
+        <span style="color: #3548cf;">'lastName'</span>: <span style="color: #3548cf;">'Doe'</span>,
+        <span style="color: #3548cf;">'initials'</span>: <span style="color: #3548cf;">'J.'</span>,
+        <span style="color: #3548cf;">'dateOfBirth'</span>: <span style="color: #3548cf;">'whocares'</span>
+           <span style="color: #dd22dd;">}</span>,
+    <span style="color: #3548cf;">'email'</span>: <span style="color: #3548cf;">'jack.doe@third.author'</span>,
+    <span style="color: #3548cf;">'addresses'</span>: <span style="color: #531ab6; font-weight: bold;">None</span>
+<span style="color: #000000;">}</span>
+
+<span style="color: #005e8b;">author4</span> = <span style="color: #000000;">{</span>
+    <span style="color: #3548cf;">'name'</span>: <span style="color: #dd22dd;">{</span>
+        <span style="color: #3548cf;">'firstName'</span>: <span style="color: #3548cf;">'Judy'</span>,
+        <span style="color: #3548cf;">'lastName'</span>: <span style="color: #3548cf;">'Doe'</span>,
+        <span style="color: #3548cf;">'initials'</span>: <span style="color: #3548cf;">'J.'</span>,
+        <span style="color: #3548cf;">'dateOfBirth'</span>: <span style="color: #3548cf;">'whocares'</span>
+           <span style="color: #dd22dd;">}</span>,
+    <span style="color: #3548cf;">'type'</span>: <span style="color: #3548cf;">'Primary'</span>,
+    <span style="color: #3548cf;">'email'</span>: <span style="color: #3548cf;">'judy.doe@fourth.author'</span>,
+    <span style="color: #3548cf;">'addresses'</span>: <span style="color: #dd22dd;">[</span> inst1, inst3 <span style="color: #dd22dd;">]</span>
+<span style="color: #000000;">}</span>
+
+<span style="color: #005e8b;">mypaper</span><span style="color: #000000;">[</span><span style="color: #3548cf;">'authors'</span><span style="color: #000000;">]</span> = <span style="color: #000000;">[</span>author1,author2,author3,author4<span style="color: #000000;">]</span>
+
+<span style="color: #005e8b;">mypaper_yaml</span> = yaml.safe_dump<span style="color: #000000;">(</span>mypaper,sort_keys=<span style="color: #531ab6; font-weight: bold;">False</span><span style="color: #000000;">)</span>
+
+<span style="color: #531ab6; font-weight: bold;">with</span> <span style="color: #8f0075; font-weight: bold;">open</span><span style="color: #000000;">(</span><span style="color: #3548cf;">'mypaper.yaml'</span>, <span style="color: #3548cf;">'wt'</span><span style="color: #000000;">)</span> <span style="color: #531ab6; font-weight: bold;">as</span> mypaper_info:
+    mypaper_info.write<span style="color: #000000;">(</span>mypaper_yaml<span style="color: #000000;">)</span>
+
+</pre>
+</div>
+
+
+
+<p>
+After running the script:
+</p>
+<div class="org-src-container">
+<pre class="src src-shell">./py-to-yml.py
+</pre>
+</div>
+
+<p>
+Now the <code>YAML</code> file looks like this:
+</p>
+<div class="org-src-container">
+<pre class="src src-shell">cat mypaper.yaml
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-yaml"><span style="color: #005e8b;">title</span>:
+  <span style="color: #005e8b;">caption</span>: This is a title
+  <span style="color: #005e8b;">funds</span>:
+  - Fund A
+  - Fund B
+<span style="color: #005e8b;">authors</span>:
+- <span style="color: #005e8b;">name</span>:
+    <span style="color: #005e8b;">firstName</span>: John
+    <span style="color: #005e8b;">lastName</span>: Doe
+    <span style="color: #005e8b;">initials</span>: J.
+    <span style="color: #005e8b;">dateOfBirth</span>: whocares
+  <span style="color: #005e8b;">type</span>: primary
+  <span style="color: #005e8b;">email</span>: john.doe@first.author
+  <span style="color: #005e8b;">addresses</span>:
+  - <span style="color: #721045;">&amp;id003</span>
+    <span style="color: #005e8b;">name</span>: Inst. A
+    <span style="color: #005e8b;">address</span>: Somewhere
+    <span style="color: #005e8b;">zip</span>: <span style="color: #3548cf;">'121212'</span>
+  - <span style="color: #721045;">&amp;id001</span>
+    <span style="color: #005e8b;">name</span>: Inst. B
+    <span style="color: #005e8b;">address</span>: Somewhere
+    <span style="color: #005e8b;">zip</span>: <span style="color: #3548cf;">'131313'</span>
+  - <span style="color: #721045;">&amp;id002</span>
+    <span style="color: #005e8b;">name</span>: Inst. C
+    <span style="color: #005e8b;">address</span>: Somewhere
+    <span style="color: #005e8b;">zip</span>: <span style="color: #3548cf;">'141414'</span>
+- <span style="color: #005e8b;">name</span>:
+    <span style="color: #005e8b;">firstName</span>: Jane
+    <span style="color: #005e8b;">lastName</span>: Doe
+    <span style="color: #005e8b;">initials</span>: J.
+    <span style="color: #005e8b;">dateOfBirth</span>: whocares
+  <span style="color: #005e8b;">type</span>: secondary
+  <span style="color: #005e8b;">email</span>: jane.doe@second.author
+  <span style="color: #005e8b;">addresses</span>:
+  - <span style="color: #721045;">*id001</span>
+  - <span style="color: #721045;">*id002</span>
+- <span style="color: #005e8b;">name</span>:
+    <span style="color: #005e8b;">firstName</span>: Jack
+    <span style="color: #005e8b;">lastName</span>: Doe
+    <span style="color: #005e8b;">initials</span>: J.
+    <span style="color: #005e8b;">dateOfBirth</span>: whocares
+  <span style="color: #005e8b;">email</span>: jack.doe@third.author
+  <span style="color: #005e8b;">addresses</span>: <span style="color: #0000b0;">null</span>
+- <span style="color: #005e8b;">name</span>:
+    <span style="color: #005e8b;">firstName</span>: Judy
+    <span style="color: #005e8b;">lastName</span>: Doe
+    <span style="color: #005e8b;">initials</span>: J.
+    <span style="color: #005e8b;">dateOfBirth</span>: whocares
+  <span style="color: #005e8b;">type</span>: Primary
+  <span style="color: #005e8b;">email</span>: judy.doe@fourth.author
+  <span style="color: #005e8b;">addresses</span>:
+  - <span style="color: #721045;">*id003</span>
+  - <span style="color: #721045;">*id002</span>
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgf138fb4" class="outline-2">
+<h2 id="orgf138fb4"><span class="section-number-2">3.</span> Application</h2>
+<div class="outline-text-2" id="text-3">
+<div class="org-src-container">
+<pre class="src src-haskell"><span style="color: #531ab6; font-weight: bold;">module</span> <span style="color: #005f5f; font-weight: bold;">Main</span> <span style="color: #531ab6; font-weight: bold;">where</span>
+
+<span style="color: #531ab6; font-weight: bold;">import</span> <span style="color: #005f5f; font-weight: bold;">JACoW.Types</span>
+<span style="color: #531ab6; font-weight: bold;">import</span> <span style="color: #531ab6; font-weight: bold;">qualified</span> <span style="color: #005f5f; font-weight: bold;">Data.Yaml</span> <span style="color: #531ab6; font-weight: bold;">as</span> <span style="color: #005f5f; font-weight: bold;">Y</span>
+<span style="color: #531ab6; font-weight: bold;">import</span> <span style="color: #531ab6; font-weight: bold;">qualified</span> <span style="color: #005f5f; font-weight: bold;">Data.Text.IO</span> <span style="color: #531ab6; font-weight: bold;">as</span> <span style="color: #005f5f; font-weight: bold;">TIO</span>
+<span style="color: #531ab6; font-weight: bold;">import</span> <span style="color: #531ab6; font-weight: bold;">qualified</span> <span style="color: #005f5f; font-weight: bold;">Data.ByteString.Char8</span> <span style="color: #531ab6; font-weight: bold;">as</span> <span style="color: #005f5f; font-weight: bold;">BS</span>
+
+<span style="color: #721045;">main</span> <span style="color: #005e8b;">=</span> <span style="color: #531ab6; font-weight: bold;">do</span>
+  ymlData <span style="color: #005e8b;">&lt;-</span> BS.readFile <span style="color: #3548cf;">"mypaper.yaml"</span>
+  <span style="color: #531ab6; font-weight: bold;">let</span> authortitle <span style="color: #005e8b;">=</span> Y.decodeEither' ymlData <span style="color: #005e8b;">::</span> <span style="color: #005f5f; font-weight: bold;">Either</span> <span style="color: #005f5f; font-weight: bold;">Y.ParseException</span> <span style="color: #005f5f; font-weight: bold;">AuthorTitle</span>
+  TIO.writeFile <span style="color: #3548cf;">"mypaper-hs.tex"</span> <span style="color: #005e8b;">$</span> either <span style="color: #000000;">(</span>error <span style="color: #005e8b;">.</span> show<span style="color: #000000;">)</span> simpletitle authortitle
+</pre>
+</div>
+
+
+<p>
+You can run the script without compiling it:
+</p>
+<div class="org-src-container">
+<pre class="src src-shell">runhaskell yml2tex.hs
+</pre>
+</div>
+
+<p>
+And the result:
+</p>
+<div class="org-src-container">
+<pre class="src src-shell">cat mypaper-hs.tex
+</pre>
+</div>
+
+<div class="org-src-container">
+<pre class="src src-latex"><span style="color: #531ab6; font-weight: bold;">\title</span>{<span style="color: #005f5f; font-weight: bold;">This is a title</span><span style="color: #005f5f; font-weight: bold;">\thanks</span><span style="color: #005f5f; font-weight: bold;">{Fund A}</span><span style="color: #005f5f; font-weight: bold;">\textsuperscript</span><span style="color: #005f5f; font-weight: bold;">{,}</span><span style="color: #005f5f; font-weight: bold;">\thanks</span><span style="color: #005f5f; font-weight: bold;">{Fund B}</span>}
+<span style="color: #531ab6; font-weight: bold;">\author</span>{<span style="color: #005f5f; font-weight: bold;">John Doe</span><span style="color: #005f5f; font-weight: bold;">\thanks</span><span style="color: #005f5f; font-weight: bold;">{john.doe@first.author}</span><span style="color: #005f5f; font-weight: bold;">\textsuperscript</span><span style="color: #005f5f; font-weight: bold;">{,}</span><span style="color: #005f5f; font-weight: bold;">\textsuperscript</span><span style="color: #005f5f; font-weight: bold;">{1}</span><span style="color: #005f5f; font-weight: bold;">\textsuperscript</span><span style="color: #005f5f; font-weight: bold;">{,}</span><span style="color: #005f5f; font-weight: bold;">\textsuperscript</span><span style="color: #005f5f; font-weight: bold;">{2}</span><span style="color: #005f5f; font-weight: bold;">\textsuperscript</span><span style="color: #005f5f; font-weight: bold;">{,}</span><span style="color: #005f5f; font-weight: bold;">\textsuperscript</span><span style="color: #005f5f; font-weight: bold;">{3}</span>
+<span style="color: #005f5f; font-weight: bold;">Jane Doe</span><span style="color: #005f5f; font-weight: bold;">\textsuperscript</span><span style="color: #005f5f; font-weight: bold;">{2}</span><span style="color: #005f5f; font-weight: bold;">\textsuperscript</span><span style="color: #005f5f; font-weight: bold;">{,}</span><span style="color: #005f5f; font-weight: bold;">\textsuperscript</span><span style="color: #005f5f; font-weight: bold;">{3}</span>
+<span style="color: #005f5f; font-weight: bold;">Jack Doe</span>
+<span style="color: #005f5f; font-weight: bold;">Judy Doe</span><span style="color: #005f5f; font-weight: bold;">\thanks</span><span style="color: #005f5f; font-weight: bold;">{judy.doe@fourth.author}</span><span style="color: #005f5f; font-weight: bold;">\textsuperscript</span><span style="color: #005f5f; font-weight: bold;">{,}</span><span style="color: #005f5f; font-weight: bold;">\textsuperscript</span><span style="color: #005f5f; font-weight: bold;">{1}</span><span style="color: #005f5f; font-weight: bold;">\textsuperscript</span><span style="color: #005f5f; font-weight: bold;">{,}</span><span style="color: #005f5f; font-weight: bold;">\textsuperscript</span><span style="color: #005f5f; font-weight: bold;">{3}</span>
+<span style="color: #884900; font-weight: bold;">\\</span>
+<span style="color: #005f5f; font-weight: bold;">\textsuperscript</span><span style="color: #005f5f; font-weight: bold;">{1}Inst. A, Somewhere, 121212</span><span style="color: #884900; font-weight: bold;">\\</span>
+<span style="color: #005f5f; font-weight: bold;">\textsuperscript</span><span style="color: #005f5f; font-weight: bold;">{2}Inst. B, Somewhere, 131313</span><span style="color: #884900; font-weight: bold;">\\</span>
+<span style="color: #005f5f; font-weight: bold;">\textsuperscript</span><span style="color: #005f5f; font-weight: bold;">{3}Inst. C, Somewhere, 141414</span>}
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgfcd2727" class="outline-2">
+<h2 id="orgfcd2727"><span class="section-number-2">4.</span> Summary</h2>
+<div class="outline-text-2" id="text-4">
+<p>
+The library looks fine. the <code>\textsuperscript{,}</code> is <b>so</b> ugly! This should be implemented in the LaTeX class file so that the document is more comprehensible.
+</p>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="author">Author: Joshua Peters, Zhichu Chen (Ross)</p>
+<p class="date">Created: 2023-08-29 Tue 21:18</p>
+<p class="validation"><a href="https://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>

@@ -1,0 +1,591 @@
+#+TITLE: Convert =YAML= to JACoW Template
+#+AUTHOR: Joshua Peters, Zhichu Chen (Ross)
+
+#+STARTUP: show3levels
+
+#+EXPORT_FILE_NAME: index
+#+PROPERTY: header-args    :noweb tangle :tangle no :exports code :eval no
+
+#+OPTIONS: html-style:nil
+#+HTML_HEAD: <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/htmlize.css"/>
+#+HTML_HEAD: <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/readtheorg.css"/>
+#+HTML_HEAD: <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+#+HTML_HEAD: <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+#+HTML_HEAD: <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+#+HTML_HEAD: <script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+
+* Introduction
+
+“Author Title Check” is a tedious job during JACoW proceedings preparations. This tool intends to provide a tool to automatically generate the template for the authors when they submit their abstracts.
+
+Ideally, the web server can collect the information of the title, the author list, and the corresponding affiliation list of each author. Let’s assume it can export the configuration to a =YAML= file, what we need now is to parse it and export a template that can be directly used by the authors.
+
+There’re three things need to be clarify:
+- It doesn’t have to be =YAML=. Any format will do as long as it can be parsed. =JSON= is fine. =XML= needs additional efforts for the code because another library will be used.
+- There are two variants of the author-affiliation list described in the [[https://github.com/JACoW-org/JACoW_Templates][template]]. Ross thought one of them is ambiguous so there will be no option to choose it in this version.
+- Right now, this will only focus on LaTeX.
+
+* Configuration
+
+The =YAML= file is supposed to have the following form:
+#+begin_src yaml
+  title:
+    caption: This is the CAPTION
+    funds:
+      - Funded by A
+      - Funded by B
+  authors:
+  - name:
+      firstName: John
+      lastName:  Doe
+      otherFields: will be ignored
+    type: primary
+    email: john.doe@first.author
+    address:
+    - name: Inst. A
+      address: Addr. A
+      zip: '123456'
+#+end_src
+
+** Datatype definitions
+:PROPERTIES:
+:header-args: :mkdirp yes
+:END:
+
+*** Main file
+:PROPERTIES:
+:header-args: :tangle JACoW/Types.hs :noweb tangle
+:END:
+
+This library will be imported by my program.
+
+Use pragmas
+#+begin_src haskell
+  <<type-pragma>>
+#+end_src
+
+#+begin_src haskell
+  module JACoW.Types where
+#+end_src
+
+Import libraries
+#+begin_src haskell
+  <<type-imports>>
+#+end_src
+
+The =Data.Text= library is needed as this will be the main data type for the LaTeX strings:
+#+begin_src haskell
+  import Data.Text hiding
+         (
+           <<type-data-text-hide>>
+         )
+#+end_src
+
+The =Data.List= library is also needed to manipulate list objects:
+#+begin_src haskell
+  import Data.List hiding
+         (
+           <<type-data-list-hide>>
+         )
+#+end_src
+
+
+The =Prelude= library will be imported at the end to ensure everything is already in scope and we will have no warnings:
+#+begin_src haskell
+  import Prelude hiding
+         (
+           <<type-prelude-hide>>
+         )
+#+end_src
+
+Create typeclasses
+#+begin_src haskell
+  <<type-class>>
+#+end_src
+
+Define handy functions
+#+begin_src haskell
+  <<type-function>>
+#+end_src
+
+And our data type and corresponding typeclasses
+#+begin_src haskell
+  <<type-defs>>
+#+end_src
+
+*** Pragma
+:PROPERTIES:
+:header-args: :noweb-ref type-pragma
+:END:
+
+Automatically convert =String= inside double quotation marks to =Text=
+#+begin_src haskell
+  {-# LANGUAGE OverloadedStrings #-}
+#+end_src
+
+*** AuthorTitle
+:PROPERTIES:
+:header-args: :noweb-ref type-defs
+:END:
+
+Define a class that allows data be converted to LaTeX strings:
+#+begin_src haskell :noweb-ref type-class
+  class LaTeXable a where
+      totitle :: a -> [Affiliation] -> Text
+#+end_src
+This =totitle= function takes the data and the affiliation list, then returns the LaTeX string.
+
+Define a =simpletitle= command to convert the data when the affiliation list is not needed:
+#+begin_src haskell :noweb-ref type-function
+  simpletitle :: (LaTeXable a) => a -> Text
+  simpletitle = flip totitle []
+#+end_src
+It’s just not necessary to define it in the =LaTeXable= class.
+
+The =YAML= configuration consists of two entries: a title, and an author list:
+#+begin_src haskell
+  data AuthorTitle = AuthorTitle
+                     { title   :: Title
+                     , authors :: [Author]
+                     } deriving (Show)
+#+end_src
+
+We need to read the =title= entry to the =title= field (first one) and the =authors= entry to the =authors= field (second one):
+#+begin_src haskell
+  instance FromJSON AuthorTitle where
+    parseJSON (Object v) =
+      AuthorTitle    <$>
+      v .:   "title" <*>
+      v .:   "authors"
+    parseJSON _ = fail "Expected Object for Config value"
+#+end_src
+=FromJSON= and other stuffs need to be imported from =Data.Yaml=:
+#+begin_src haskell :noweb-ref type-imports
+  import Data.Yaml
+#+end_src
+and these fancy operators =<$>=, =<*>= from =Control.Applicative=:
+#+begin_src haskell :noweb-ref type-imports
+  import Control.Applicative
+#+end_src
+
+Converting =AuthorTitle= to LaTeX is easy: converting both =title= and =authors=, then stick them together with a newline character:
+#+begin_src haskell
+  instance LaTeXable AuthorTitle where
+    totitle (AuthorTitle t as) _  = unlines [totitle t affs, authorTeX (unTeXlines ([unlines auths] <> fmap toAff (zip [1..] affs)))]
+      where
+        affs = fromMaybe [] (nub <$> (foldl1 (<>) $ fmap addresses as))
+        auths = fmap (flip totitle affs) as
+        toAff (n,aff) = supTeX ((pack.show) n) <> totitle aff affs
+#+end_src
+=authorTeX= is used to generate =\author{...}=.
+
+Since I will be using LaTeX macros a lot, Let me define a one-argument LaTeX macro:
+#+begin_src haskell :noweb-ref type-function
+  cs1 :: Text -> Text -> Text
+  cs1 cs arg1 = "\\" <> cs <> "{" <> arg1 <> "}"
+#+end_src
+Now I can define =authorTeX=:
+#+begin_src haskell :noweb-ref type-function
+  authorTeX  = cs1 "author"
+#+end_src
+
+=fromMaybe= needs to be imported from =Data.Maybe= library:
+#+begin_src haskell :noweb-ref type-imports
+  import Data.Maybe
+#+end_src
+
+=zip= and =foldl1= should not be imported from =Data.Text= so:
+#+begin_src haskell :noweb-ref type-data-text-hide
+  zip,foldl1,
+#+end_src
+
+=unlines= should not be imported from =Prelude=:
+#+begin_src haskell :noweb-ref type-prelude-hide
+  unlines,
+#+end_src
+or =Data.List=:
+#+begin_src haskell :noweb-ref type-data-list-hide
+  unlines,
+#+end_src
+
+=unTeXlines= puts =\\= at the end of each line:
+#+begin_src haskell :noweb-ref type-function
+  unTeXlines = intercalate ("\\\\" <> singleton '\n')
+#+end_src
+and =intercalate= and =singleton= should not be imported from =Data.List=:
+#+begin_src haskell :noweb-ref type-data-list-hide
+  intercalate,singleton,
+#+end_src
+
+**** Title
+
+The =Title= data type consists of a caption and probably a list of funds:
+#+begin_src haskell
+  data Title = Title
+               { caption :: Text
+               , funds   :: Maybe [Fund]
+               } deriving (Show)
+#+end_src
+where =Fund= is an alias of =Text= for now:
+#+begin_src haskell
+  type Fund = Text
+#+end_src
+
+The =FromJSON= instance is straightforward:
+#+begin_src haskell
+  instance FromJSON Title where
+    parseJSON (Object v) =
+      Title            <$>
+      v .:   "caption" <*>
+      v .:?  "funds"
+    parseJSON _ = fail "Expected Object for Config value"
+#+end_src
+and converting =Title= to LaTeX is put the caption and the list of funds in the =\title= micro:
+#+begin_src haskell
+  instance LaTeXable Title where
+    totitle (Title cap fs) _  = titleTeX $ cap <> sep (fromMaybe [] $ fmap (fmap thanksTeX) fs)
+#+end_src
+where =titleTeX= is used to generate =\title{...}=:
+#+begin_src haskell :noweb-ref type-function
+  titleTeX  = cs1 "title"
+#+end_src
+and likewise =thanksTeX=:
+#+begin_src haskell :noweb-ref type-function
+  thanksTeX = cs1 "thanks"
+#+end_src
+
+=sep= concatenates the list of =Text= strings and intercalates =\textsuperscript{,}= in-between:
+#+begin_src haskell :noweb-ref type-function
+  supTeX    = cs1 "textsuperscript"
+  supComma  = supTeX ","
+  sep       = intercalate supComma
+#+end_src
+
+
+**** Author
+
+=Author= has the following fields: a name, an email, probably a list of affiliations and whether the author is a primary author.
+#+begin_src haskell
+  data Author = Author
+                { name       :: Name
+                , email      :: Email
+                , addresses  :: Maybe [Affiliation]
+                , isPrimary  :: Bool
+                } deriving (Show)
+#+end_src
+
+#+begin_src haskell
+  instance FromJSON Author where
+    parseJSON (Object v) =
+      Author             <$>
+      v .:   "name"      <*>
+      v .:   "email"     <*>
+      v .:?  "addresses" <*>
+      (maybePrimary <$> (v .:? "type" .!= Just "other" :: Parser (Maybe Text)))
+    parseJSON _ = fail "Expected Object for Config value"
+#+end_src
+
+The =maybePrimary= function will check whether the =type= field in the =YAML= configuration is =primary= (case insensitive):
+#+begin_src haskell :noweb-ref type-function
+  maybePrimary :: Maybe Text -> Bool
+  maybePrimary (Just str) = (== "primary").toLower $ str
+  maybePrimary _ = False
+#+end_src
+
+Converting =Author= to LaTeX will really use the affiliation list this time.
+#+begin_src haskell
+  instance LaTeXable Author where
+    totitle (Author nm em addrs isP) affs = totitle nm affs <> sep (thankslst <> catMaybes (fmap (flip addrIndex affs) (fromMaybe [] addrs)))
+      where thankslst =
+              if isP
+              then [totitle em affs]
+              else []
+#+end_src
+
+=addrIndex= returns the index of the affiliation if found in the list:
+#+begin_src haskell :noweb-ref type-function
+  addrIndex :: Affiliation -> [Affiliation] -> Maybe Text
+  addrIndex aff affs = (supTeX.pack.show.(+1)) <$> aff `elemIndex` affs
+#+end_src
+
+=Email= is an alias of =Text=:
+#+begin_src haskell
+  type Email = Text
+#+end_src
+and is easy to be converted to LaTeX:
+#+begin_src haskell
+  instance LaTeXable Email where
+    totitle eml _ = thanksTeX eml
+#+end_src
+
+=Name= and =Affiliation= is more complicated.
+
+***** Name
+
+=Name= has fields of =firstName=, =lastName= and probably =initials=:
+#+begin_src haskell
+  data Name = Name
+              { firstName :: Text
+              , lastName  :: Text
+              , initials  :: Maybe Text
+              } deriving (Show)
+#+end_src
+and reads directly from:
+#+begin_src haskell
+  instance FromJSON Name where
+    parseJSON (Object v) =
+      Name               <$>
+      v .:   "firstName" <*>
+      v .:   "lastName"  <*>
+      v .:?  "initials"
+    parseJSON _ = fail "Expected Object for Config value"
+#+end_src
+
+=firstName lastName= would be the LaTeX representation:
+#+begin_src haskell
+  instance LaTeXable Name where
+      totitle (Name fnm lnm ini) _ = unwords [fnm,lnm] -- firstname lastname
+#+end_src
+
+Of course, =unwords= should be imported from =Data.Text= rather than from =Prelude=:
+#+begin_src haskell :noweb-ref type-prelude-hide
+  unwords,
+#+end_src
+nor from =Data.List=:
+#+begin_src haskell :noweb-ref type-data-list-hide
+  unwords,
+#+end_src
+
+***** Affiliation
+
+=Affiliation= has it name and probably an address and a zip code:
+#+begin_src haskell
+  data Affiliation = Affiliation
+                     { affName  :: Text
+                     , adress   :: Maybe Text
+                     , zipcode  :: Maybe Text
+                     } deriving (Show,Eq)
+#+end_src
+The reason I define =Affiliation= as an =Eq= class is because we need to locate the affiliation by comparing them.
+#+begin_src haskell
+  instance FromJSON Affiliation where
+    parseJSON (Object v) =
+      Affiliation      <$>
+      v .:   "name"    <*>
+      v .:?  "address" <*>
+      v .:?  "zip"
+    parseJSON _ = fail "Expected Object for Config value"
+#+end_src
+Append the address and/or the zip code when they are available:
+#+begin_src haskell
+  instance LaTeXable Affiliation where
+    totitle aff _ = affName aff                                                    -- name
+                    <> fromMaybe "" (((<>) ", ") <$> adress aff)                   -- , address
+                    <> fromMaybe "" (((<>) ", ") <$> zipcode aff)                  -- , zip
+#+end_src
+
+** YAML generation
+
+In case I could make mistakes in the data type codes in =Haskell=, I will use =Python= to generate the configuration file to make it independent.
+
+#+begin_src python :noweb tangle :tangle py-to-yml.py :shebang #!/usr/bin/env python
+  import yaml
+
+  class JACoW:
+      pass
+
+  mypaper = {}
+  mypaper['title'] = {
+      'caption': 'This is a title',
+      'funds': ['Fund A', 'Fund B']
+  }
+
+  inst1 = {
+      'name': 'Inst. A',
+      'address': 'Somewhere',
+      'zip': '121212'
+  }
+
+  inst2 = {
+      'name': 'Inst. B',
+      'address': 'Somewhere',
+      'zip': '131313'
+  }
+
+  inst3 = {
+      'name': 'Inst. C',
+      'address': 'Somewhere',
+      'zip': '141414'
+  }
+
+  author1 = {
+      'name': {
+          'firstName': 'John',
+          'lastName': 'Doe',
+          'initials': 'J.',
+          'dateOfBirth': 'whocares'
+             },
+      'type': 'primary',
+      'email': 'john.doe@first.author',
+      'addresses': [ inst1, inst2, inst3 ]
+  }
+
+  author2 = {
+      'name': {
+          'firstName': 'Jane',
+          'lastName': 'Doe',
+          'initials': 'J.',
+          'dateOfBirth': 'whocares'
+             },
+      'type': 'secondary',
+      'email': 'jane.doe@second.author',
+      'addresses': [ inst2, inst3 ]
+  }
+
+  author3 = {
+      'name': {
+          'firstName': 'Jack',
+          'lastName': 'Doe',
+          'initials': 'J.',
+          'dateOfBirth': 'whocares'
+             },
+      'email': 'jack.doe@third.author',
+      'addresses': None
+  }
+
+  author4 = {
+      'name': {
+          'firstName': 'Judy',
+          'lastName': 'Doe',
+          'initials': 'J.',
+          'dateOfBirth': 'whocares'
+             },
+      'type': 'Primary',
+      'email': 'judy.doe@fourth.author',
+      'addresses': [ inst1, inst3 ]
+  }
+
+  mypaper['authors'] = [author1,author2,author3,author4]
+
+  mypaper_yaml = yaml.safe_dump(mypaper,sort_keys=False)
+
+  with open('mypaper.yaml', 'wt') as mypaper_info:
+      mypaper_info.write(mypaper_yaml)
+
+#+end_src
+
+
+
+After running the script:
+#+begin_src shell :results silent
+  ./py-to-yml.py
+#+end_src
+
+Now the =YAML= file looks like this:
+#+begin_src shell :results raw replace :wrap src yaml :exports both
+  cat mypaper.yaml
+#+end_src
+
+#+RESULTS:
+#+begin_src yaml
+title:
+  caption: This is a title
+  funds:
+  - Fund A
+  - Fund B
+authors:
+- name:
+    firstName: John
+    lastName: Doe
+    initials: J.
+    dateOfBirth: whocares
+  type: primary
+  email: john.doe@first.author
+  addresses:
+  - &id003
+    name: Inst. A
+    address: Somewhere
+    zip: '121212'
+  - &id001
+    name: Inst. B
+    address: Somewhere
+    zip: '131313'
+  - &id002
+    name: Inst. C
+    address: Somewhere
+    zip: '141414'
+- name:
+    firstName: Jane
+    lastName: Doe
+    initials: J.
+    dateOfBirth: whocares
+  type: secondary
+  email: jane.doe@second.author
+  addresses:
+  - *id001
+  - *id002
+- name:
+    firstName: Jack
+    lastName: Doe
+    initials: J.
+    dateOfBirth: whocares
+  email: jack.doe@third.author
+  addresses: null
+- name:
+    firstName: Judy
+    lastName: Doe
+    initials: J.
+    dateOfBirth: whocares
+  type: Primary
+  email: judy.doe@fourth.author
+  addresses:
+  - *id003
+  - *id002
+#+end_src
+
+* Application
+
+#+begin_src haskell :tangle yml2tex.hs
+  module Main where
+
+  import JACoW.Types
+  import qualified Data.Yaml as Y
+  import qualified Data.Text.IO as TIO
+  import qualified Data.ByteString.Char8 as BS
+
+  main = do
+    ymlData <- BS.readFile "mypaper.yaml"
+    let authortitle = Y.decodeEither' ymlData :: Either Y.ParseException AuthorTitle
+    TIO.writeFile "mypaper-hs.tex" $ either (error . show) simpletitle authortitle
+#+end_src
+
+
+You can run the script without compiling it:
+#+begin_src shell
+  runhaskell yml2tex.hs
+#+end_src
+
+#+RESULTS:
+
+And the result:
+#+begin_src shell :results raw replace :wrap src latex :exports both
+  cat mypaper-hs.tex
+#+end_src
+
+#+RESULTS:
+#+begin_src latex
+\title{This is a title\thanks{Fund A}\textsuperscript{,}\thanks{Fund B}}
+\author{John Doe\thanks{john.doe@first.author}\textsuperscript{,}\textsuperscript{1}\textsuperscript{,}\textsuperscript{2}\textsuperscript{,}\textsuperscript{3}
+Jane Doe\textsuperscript{2}\textsuperscript{,}\textsuperscript{3}
+Jack Doe
+Judy Doe\thanks{judy.doe@fourth.author}\textsuperscript{,}\textsuperscript{1}\textsuperscript{,}\textsuperscript{3}
+\\
+\textsuperscript{1}Inst. A, Somewhere, 121212\\
+\textsuperscript{2}Inst. B, Somewhere, 131313\\
+\textsuperscript{3}Inst. C, Somewhere, 141414}
+#+end_src
+
+* Summary
+
+The library looks fine. the =\textsuperscript{,}= is *so* ugly! This should be implemented in the LaTeX class file so that the document is more comprehensible.
+
