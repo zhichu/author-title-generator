@@ -4,7 +4,7 @@
 #+STARTUP: show3levels
 
 #+EXPORT_FILE_NAME: index
-#+PROPERTY: header-args    :noweb tangle :tangle no :exports code :eval no
+#+PROPERTY: header-args    :noweb tangle :tangle no :exports code :eval no :mkdirp yes
 
 #+OPTIONS: html-style:nil
 #+HTML_HEAD: <link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/htmlize.css"/>
@@ -73,23 +73,6 @@ Import libraries
   <<type-imports>>
 #+end_src
 
-The =Data.Text= library is needed as this will be the main data type for the LaTeX strings:
-#+begin_src haskell
-  import Data.Text hiding
-         (
-           <<type-data-text-hide>>
-         )
-#+end_src
-
-The =Data.List= library is also needed to manipulate list objects:
-#+begin_src haskell
-  import Data.List hiding
-         (
-           <<type-data-list-hide>>
-         )
-#+end_src
-
-
 The =Prelude= library will be imported at the end to ensure everything is already in scope and we will have no warnings:
 #+begin_src haskell
   import Prelude hiding
@@ -123,24 +106,92 @@ Automatically convert =String= inside double quotation marks to =Text=
   {-# LANGUAGE OverloadedStrings #-}
 #+end_src
 
+*** Type class
+:PROPERTIES:
+:header-args: :noweb-ref type-class
+:END:
+
+Define a class that allows data be converted to LaTeX strings:
+#+begin_src haskell
+  class LaTeXable a where
+      fromtitle :: a -> [Affiliation] -> [LaTeX]
+      tolatex   :: a -> [LaTeX]
+#+end_src
+This =totitle= function takes the data and the affiliation list, then returns the LaTeX objects.
+
+
+*** LaTeX data type
+:PROPERTIES:
+:header-args: :noweb-ref type-defs
+:END:
+
+
+Let’s first define a bunch of LaTeX data types:
+#+begin_src haskell
+  data LaTeX = Raw String
+             | Sup String
+             | Maþ String
+             | Mac String [LaTeX]
+             | Spc
+             | NewLine
+             | TeXLine
+             deriving Show
+#+end_src
+with corresponding LaTeX representation:
+
+**** LaTeX functions
+:PROPERTIES:
+:header-args: :noweb-ref type-function
+:END:
+
+#+begin_src haskell
+  stringify :: LaTeX -> String
+
+  stringify (Raw s) = s
+  stringify (Sup s) = supTeX s
+  stringify (Maþ s) = mathTeX s
+  stringify (Mac c ls) = cs1 c $ foldl1 (<>) $ stringify <$> ls
+  stringify Spc = " "
+  stringify NewLine = "\n"
+  stringify TeXLine = "\\\\"
+#+end_src
+
+Since I will be using LaTeX macros a lot, Let me define a one-argument LaTeX macro:
+#+begin_src haskell
+  cs1 :: String -> String -> String
+  cs1 cs arg1 = "\\" <> cs <> wrap "{" "}" arg1
+  wrap :: String -> String -> String -> String
+  wrap l r s = l <> s <> r
+#+end_src
+Now I can define:
+#+begin_src haskell
+  supTeX    = cs1 "textsuperscript"
+  mathTeX   = wrap "$" "$"
+#+end_src
+
+#+begin_src haskell
+  -- sep :: String -> [LaTeX] -> String
+  -- sep s ltxs = foldl1 (<> s <>) (fmap toLaTeX ltxs)
+#+end_src
+
+To simplify the output, we can combine some elements together.
+#+begin_src haskell
+  simplify :: [LaTeX] -> [LaTeX]
+
+  simplify [] = []
+  simplify (Mac cs ls:xs) = (Mac cs (simplify ls)):simplify xs
+  simplify (x:[]) = [x]
+  simplify (Raw x1:Raw x2:xs) = simplify ((Raw (x1<>x2)):xs)
+  simplify (Sup x1:Sup x2:xs) = simplify ((Sup (x1<>x2)):xs)
+  simplify (Maþ x1:Maþ x2:xs) = simplify ((Maþ (x1<>x2)):xs)
+  simplify (x:xs) = x:simplify xs
+#+end_src
+
 *** AuthorTitle
 :PROPERTIES:
 :header-args: :noweb-ref type-defs
 :END:
 
-Define a class that allows data be converted to LaTeX strings:
-#+begin_src haskell :noweb-ref type-class
-  class LaTeXable a where
-      totitle :: a -> [Affiliation] -> Text
-#+end_src
-This =totitle= function takes the data and the affiliation list, then returns the LaTeX string.
-
-Define a =simpletitle= command to convert the data when the affiliation list is not needed:
-#+begin_src haskell :noweb-ref type-function
-  simpletitle :: (LaTeXable a) => a -> Text
-  simpletitle = flip totitle []
-#+end_src
-It’s just not necessary to define it in the =LaTeXable= class.
 
 The =YAML= configuration consists of two entries: a title, and an author list:
 #+begin_src haskell
@@ -148,6 +199,11 @@ The =YAML= configuration consists of two entries: a title, and an author list:
                      { title   :: Title
                      , authors :: [Author]
                      } deriving (Show)
+#+end_src
+
+Let me make a trivial instance to be used as a default value:
+#+begin_src haskell
+  emptyAuthorTitle = AuthorTitle (Title "" Nothing) [Author (Name "" "" Nothing) "" Nothing False]
 #+end_src
 
 We need to read the =title= entry to the =title= field (first one) and the =authors= entry to the =authors= field (second one):
@@ -171,22 +227,18 @@ and these fancy operators =<$>=, =<*>= from =Control.Applicative=:
 Converting =AuthorTitle= to LaTeX is easy: converting both =title= and =authors=, then stick them together with a newline character:
 #+begin_src haskell
   instance LaTeXable AuthorTitle where
-    totitle (AuthorTitle t as) _  = unlines [totitle t affs, authorTeX (unTeXlines ([unlines auths] <> fmap toAff (zip [1..] affs)))]
+    tolatex (AuthorTitle t as)  = intercalate [NewLine] [tolatex t,[Mac "author" (intercalate [TeXLine,NewLine] ([authorlist] <> affiliations ))]]
       where
-        affs = fromMaybe [] (nub <$> (foldl1 (<>) $ fmap addresses as))
-        auths = fmap (flip totitle affs) as
-        toAff (n,aff) = supTeX ((pack.show) n) <> totitle aff affs
+        authorlist = intercalate [NewLine] authors
+        authors = flip fromtitle affs <$> as
+        affs = fromMaybe [] (nub <$> (foldl1 (<>) $ addresses <$> as))
+        affiliations = toAff <$> (zip [1..] affs)
+        toAff (n,aff) = [Sup (show n)] <> fromtitle aff affs
+    fromtitle t _ = tolatex t
 #+end_src
-=authorTeX= is used to generate =\author{...}=.
-
-Since I will be using LaTeX macros a lot, Let me define a one-argument LaTeX macro:
-#+begin_src haskell :noweb-ref type-function
-  cs1 :: Text -> Text -> Text
-  cs1 cs arg1 = "\\" <> cs <> "{" <> arg1 <> "}"
-#+end_src
-Now I can define =authorTeX=:
-#+begin_src haskell :noweb-ref type-function
-  authorTeX  = cs1 "author"
+where =nub= removes duplicates in a list, =intersperse= inserts an element to a list and =intercalate= links the elements in a list with a given object. They all come from =Data.List=:
+#+begin_src haskell :noweb-ref type-imports
+  import Data.List
 #+end_src
 
 =fromMaybe= needs to be imported from =Data.Maybe= library:
@@ -194,27 +246,14 @@ Now I can define =authorTeX=:
   import Data.Maybe
 #+end_src
 
-=zip= and =foldl1= should not be imported from =Data.Text= so:
-#+begin_src haskell :noweb-ref type-data-text-hide
-  zip,foldl1,
-#+end_src
-
-=unlines= should not be imported from =Prelude=:
-#+begin_src haskell :noweb-ref type-prelude-hide
-  unlines,
-#+end_src
-or =Data.List=:
-#+begin_src haskell :noweb-ref type-data-list-hide
-  unlines,
+=authorTeX= is used to generate =\author{...}=:
+#+begin_src haskell :noweb-ref type-function
+  authorTeX  = cs1 "author"
 #+end_src
 
 =unTeXlines= puts =\\= at the end of each line:
 #+begin_src haskell :noweb-ref type-function
   unTeXlines = intercalate ("\\\\" <> singleton '\n')
-#+end_src
-and =intercalate= and =singleton= should not be imported from =Data.List=:
-#+begin_src haskell :noweb-ref type-data-list-hide
-  intercalate,singleton,
 #+end_src
 
 **** Title
@@ -222,13 +261,13 @@ and =intercalate= and =singleton= should not be imported from =Data.List=:
 The =Title= data type consists of a caption and probably a list of funds:
 #+begin_src haskell
   data Title = Title
-               { caption :: Text
+               { caption :: String
                , funds   :: Maybe [Fund]
                } deriving (Show)
 #+end_src
 where =Fund= is an alias of =Text= for now:
 #+begin_src haskell
-  type Fund = Text
+  type Fund = String
 #+end_src
 
 The =FromJSON= instance is straightforward:
@@ -241,24 +280,16 @@ The =FromJSON= instance is straightforward:
     parseJSON _ = fail "Expected Object for Config value"
 #+end_src
 and converting =Title= to LaTeX is put the caption and the list of funds in the =\title= micro:
-#+begin_src haskell
+#+begin_src haskell -l "--((ref:%s))"
   instance LaTeXable Title where
-    totitle (Title cap fs) _  = titleTeX $ cap <> sep (fromMaybe [] $ fmap (fmap thanksTeX) fs)
+    tolatex (Title cap fs)  = [Mac "title" $ [Raw cap] <> intersperse (Sup ",") (fromMaybe [] $ ((Mac "thanks").singleton.(Raw)) <<$>> fs)] --((ref:sup-comma-in-title))
+    fromtitle t _ = tolatex t
 #+end_src
-where =titleTeX= is used to generate =\title{...}=:
+=<<$>>= is an alias of =fmap . fmap=:
 #+begin_src haskell :noweb-ref type-function
-  titleTeX  = cs1 "title"
-#+end_src
-and likewise =thanksTeX=:
-#+begin_src haskell :noweb-ref type-function
-  thanksTeX = cs1 "thanks"
-#+end_src
-
-=sep= concatenates the list of =Text= strings and intercalates =\textsuperscript{,}= in-between:
-#+begin_src haskell :noweb-ref type-function
-  supTeX    = cs1 "textsuperscript"
-  supComma  = supTeX ","
-  sep       = intercalate supComma
+  infixl 4 <<$>>
+  (<<$>>) :: (Functor f, Functor g) => (a -> b) -> f (g a) -> f (g b)
+  (<<$>>) = fmap . fmap
 #+end_src
 
 
@@ -281,41 +312,51 @@ and likewise =thanksTeX=:
       v .:   "name"      <*>
       v .:   "email"     <*>
       v .:?  "addresses" <*>
-      (maybePrimary <$> (v .:? "type" .!= Just "other" :: Parser (Maybe Text)))
+      (maybePrimary <$> (v .:? "type" .!= Just "other" :: Parser (Maybe String)))
     parseJSON _ = fail "Expected Object for Config value"
 #+end_src
 
 The =maybePrimary= function will check whether the =type= field in the =YAML= configuration is =primary= (case insensitive):
 #+begin_src haskell :noweb-ref type-function
-  maybePrimary :: Maybe Text -> Bool
-  maybePrimary (Just str) = (== "primary").toLower $ str
+  maybePrimary :: Maybe String -> Bool
+  maybePrimary (Just str) = (== "primary") $ toLower <$> str
   maybePrimary _ = False
+#+end_src
+and you need to import =toLower= from =Data.Char=:
+#+begin_src haskell :noweb-ref type-imports
+  import Data.Char
 #+end_src
 
 Converting =Author= to LaTeX will really use the affiliation list this time.
-#+begin_src haskell
+#+begin_src haskell -l "--((ref:%s))"
   instance LaTeXable Author where
-    totitle (Author nm em addrs isP) affs = totitle nm affs <> sep (thankslst <> catMaybes (fmap (flip addrIndex affs) (fromMaybe [] addrs)))
+    fromtitle (Author nm em addrs isP) affs = fromtitle nm affs <> intersperse (Sup ",") (thankslst <> catMaybes (fmap (flip addrIndex affs) (fromMaybe [] addrs))) --((ref:sup-comma-in-author))
       where thankslst =
               if isP
-              then [totitle em affs]
+              then tolatex em
               else []
+    tolatex as = fromtitle as []
 #+end_src
+
+#+RESULTS:
+: <interactive>:8:16-24: error:
+:     Variable not in scope: fromtitle :: t1 -> [a0] -> t2
 
 =addrIndex= returns the index of the affiliation if found in the list:
 #+begin_src haskell :noweb-ref type-function
-  addrIndex :: Affiliation -> [Affiliation] -> Maybe Text
-  addrIndex aff affs = (supTeX.pack.show.(+1)) <$> aff `elemIndex` affs
+  addrIndex :: Affiliation -> [Affiliation] -> Maybe LaTeX
+  addrIndex aff affs = ((Sup).show.(+1)) <$> aff `elemIndex` affs
 #+end_src
 
 =Email= is an alias of =Text=:
 #+begin_src haskell
-  type Email = Text
+  type Email = String
 #+end_src
 and is easy to be converted to LaTeX:
 #+begin_src haskell
   instance LaTeXable Email where
-    totitle eml _ = thanksTeX eml
+    tolatex eml = [Mac "thanks" [Raw eml]]
+    fromtitle e _ = tolatex e
 #+end_src
 
 =Name= and =Affiliation= is more complicated.
@@ -325,9 +366,9 @@ and is easy to be converted to LaTeX:
 =Name= has fields of =firstName=, =lastName= and probably =initials=:
 #+begin_src haskell
   data Name = Name
-              { firstName :: Text
-              , lastName  :: Text
-              , initials  :: Maybe Text
+              { firstName :: String
+              , lastName  :: String
+              , initials  :: Maybe String
               } deriving (Show)
 #+end_src
 and reads directly from:
@@ -344,26 +385,19 @@ and reads directly from:
 =firstName lastName= would be the LaTeX representation:
 #+begin_src haskell
   instance LaTeXable Name where
-      totitle (Name fnm lnm ini) _ = unwords [fnm,lnm] -- firstname lastname
+    tolatex (Name fnm lnm ini) = [Raw (unwords [fnm,lnm])] -- firstname lastname
+    fromtitle n _ = tolatex n
 #+end_src
 
-Of course, =unwords= should be imported from =Data.Text= rather than from =Prelude=:
-#+begin_src haskell :noweb-ref type-prelude-hide
-  unwords,
-#+end_src
-nor from =Data.List=:
-#+begin_src haskell :noweb-ref type-data-list-hide
-  unwords,
-#+end_src
 
 ***** Affiliation
 
 =Affiliation= has it name and probably an address and a zip code:
 #+begin_src haskell
   data Affiliation = Affiliation
-                     { affName  :: Text
-                     , adress   :: Maybe Text
-                     , zipcode  :: Maybe Text
+                     { affName  :: String
+                     , adress   :: Maybe String
+                     , zipcode  :: Maybe String
                      } deriving (Show,Eq)
 #+end_src
 The reason I define =Affiliation= as an =Eq= class is because we need to locate the affiliation by comparing them.
@@ -379,9 +413,11 @@ The reason I define =Affiliation= as an =Eq= class is because we need to locate 
 Append the address and/or the zip code when they are available:
 #+begin_src haskell
   instance LaTeXable Affiliation where
-    totitle aff _ = affName aff                                                    -- name
-                    <> fromMaybe "" (((<>) ", ") <$> adress aff)                   -- , address
-                    <> fromMaybe "" (((<>) ", ") <$> zipcode aff)                  -- , zip
+    tolatex aff = [Raw (affName aff                                                    -- name
+                        <> fromMaybe "" (((<>) ", ") <$> adress aff)                   -- , address
+                        <> fromMaybe "" (((<>) ", ") <$> zipcode aff)                  -- , zip
+                       )]
+    fromtitle aff _ = tolatex aff
 #+end_src
 
 ** YAML generation
@@ -550,42 +586,58 @@ authors:
 
   import JACoW.Types
   import qualified Data.Yaml as Y
-  import qualified Data.Text.IO as TIO
+  --import qualified Data.Text.IO as TIO
   import qualified Data.ByteString.Char8 as BS
+
+  simpletitle at = foldl1 (<>) $ stringify <$> (simplify $ tolatex at)
 
   main = do
     ymlData <- BS.readFile "mypaper.yaml"
     let authortitle = Y.decodeEither' ymlData :: Either Y.ParseException AuthorTitle
-    TIO.writeFile "mypaper-hs.tex" $ either (error . show) simpletitle authortitle
+    writeFile "mypaper-hs.tex" $ either (error . show) simpletitle authortitle
 #+end_src
 
 
 You can run the script without compiling it:
-#+begin_src shell
+#+begin_src shell :eval yes
   runhaskell yml2tex.hs
 #+end_src
 
 #+RESULTS:
 
 And the result:
-#+begin_src shell :results raw replace :wrap src latex :exports both
+#+begin_src shell :results raw replace :wrap src latex :exports both :eval yes
   cat mypaper-hs.tex
 #+end_src
 
 #+RESULTS:
 #+begin_src latex
 \title{This is a title\thanks{Fund A}\textsuperscript{,}\thanks{Fund B}}
-\author{John Doe\thanks{john.doe@first.author}\textsuperscript{,}\textsuperscript{1}\textsuperscript{,}\textsuperscript{2}\textsuperscript{,}\textsuperscript{3}
-Jane Doe\textsuperscript{2}\textsuperscript{,}\textsuperscript{3}
+\author{John Doe\thanks{john.doe@first.author}\textsuperscript{,1,2,3}
+Jane Doe\textsuperscript{2,3}
 Jack Doe
-Judy Doe\thanks{judy.doe@fourth.author}\textsuperscript{,}\textsuperscript{1}\textsuperscript{,}\textsuperscript{3}
-\\
+Judy Doe\thanks{judy.doe@fourth.author}\textsuperscript{,1,3}\\
 \textsuperscript{1}Inst. A, Somewhere, 121212\\
 \textsuperscript{2}Inst. B, Somewhere, 131313\\
 \textsuperscript{3}Inst. C, Somewhere, 141414}
 #+end_src
 
+* Debug
+
+#+begin_quote
+ghci> :l JACoW.Types
+[1 of 1] Compiling JACoW.Types      ( JACoW/Types.hs, interpreted )
+Ok, one module loaded.
+ghci> import qualified Data.Yaml as Y
+ghci> import qualified Data.ByteString.Char8 as BS
+ghci> :m + Data.Either
+ghci> ymlData <- BS.readFile "mypaper.yaml"
+ghci> let authortitle = Y.decodeEither' ymlData :: Either Y.ParseException AuthorTitle
+ghci> let a=fromRight emptyAuthorTitle authortitle
+ghci> let b=tolatex a
+#+end_quote
+
 * Summary
 
-The library looks fine. the =\textsuperscript{,}= is *so* ugly! This should be implemented in the LaTeX class file so that the document is more comprehensible.
+The library looks fine. the =\textsuperscript{,}= inserted at [[(sup-comma-in-title)][here]] and [[(sup-comma-in-author)][here]] on the other hand is *so* ugly! This should be implemented in the LaTeX class file so that the document is more comprehensible.
 
